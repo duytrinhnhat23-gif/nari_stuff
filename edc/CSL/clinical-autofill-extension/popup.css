@@ -1,0 +1,20 @@
+:root { font-family: Arial, sans-serif; color: #202124; }
+body { margin: 0; width: 410px; background: #f6f7f9; }
+main { padding: 14px; }
+header h1 { margin: 0; font-size: 19px; }
+header p { margin: 4px 0 12px; font-size: 12px; color: #5f6368; line-height: 1.35; }
+section, details { background: white; border: 1px solid #dadce0; border-radius: 9px; margin-bottom: 10px; padding: 10px; }
+summary { font-weight: 700; cursor: pointer; margin-bottom: 8px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; }
+input, select { box-sizing: border-box; width: 100%; padding: 7px 8px; border: 1px solid #c9cdd2; border-radius: 6px; background: white; font-size: 13px; }
+.grid { display: grid; gap: 8px; }
+.grid.two { grid-template-columns: 1fr 1fr; }
+.date-grid { display: grid; grid-template-columns: .75fr 1.1fr 1fr; gap: 8px; }
+.section-label { margin-bottom: 7px; font-size: 12px; font-weight: 700; }
+.subhead { margin: 10px 0 6px; font-size: 12px; font-weight: 700; color: #5f6368; }
+.shared-date { border-width: 2px; }
+.button-row { display: grid; grid-template-columns: 1fr 1.7fr; gap: 8px; }
+button { width: 100%; border: 0; border-radius: 8px; padding: 11px; font-weight: 700; cursor: pointer; background: #1a73e8; color: white; }
+button.secondary { background: #e8eaed; color: #202124; }
+button:disabled { opacity: .6; cursor: default; }
+#status { min-height: 18px; margin-top: 8px; font-size: 12px; line-height: 1.35; }

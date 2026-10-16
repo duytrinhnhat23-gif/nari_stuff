@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Clinical Page Autofill",
+  "version": "1.1.0",
+  "description": "Fill supported clinical study pages using one shared visit date and popup-entered values. Press F2 to fill the current page.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Clinical Autofill"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

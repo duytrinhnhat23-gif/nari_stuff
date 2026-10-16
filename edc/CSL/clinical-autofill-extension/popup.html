@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clinical Autofill</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Clinical Autofill</h1>
+      <p>One shared date is used on every supported page. Press F2 on the study page to fill.</p>
+    </header>
+
+    <section class="shared-date">
+      <div class="section-label">Visit / procedure date</div>
+      <div class="date-grid">
+        <label>Day
+          <input id="dateDay" type="text" inputmode="numeric" maxlength="2" placeholder="19" />
+        </label>
+        <label>Month
+          <select id="dateMonth">
+            <option value="">Month</option>
+            <option value="Jan">Jan</option>
+            <option value="Feb">Feb</option>
+            <option value="Mar">Mar</option>
+            <option value="Apr">Apr</option>
+            <option value="May">May</option>
+            <option value="Jun">Jun</option>
+            <option value="Jul">Jul</option>
+            <option value="Aug">Aug</option>
+            <option value="Sep">Sep</option>
+            <option value="Oct">Oct</option>
+            <option value="Nov">Nov</option>
+            <option value="Dec">Dec</option>
+          </select>
+        </label>
+        <label>Year
+          <input id="dateYear" type="text" inputmode="numeric" maxlength="4" placeholder="2026" />
+        </label>
+      </div>
+    </section>
+
+    <details open>
+      <summary>Vital Signs</summary>
+      <div class="grid two">
+        <label>Time (24h)<input id="vitalTime" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="10:06" /></label>
+        <label>Systolic<input id="systolic" type="number" /></label>
+        <label>Diastolic<input id="diastolic" type="number" /></label>
+        <label>Pulse<input id="pulse" type="number" /></label>
+        <label>Temperature<input id="temperature" type="number" step="0.1" /></label>
+      </div>
+      <div class="subhead">Weights</div>
+      <div class="grid two">
+        <label>Pre time (24h)<input id="preWeightTime" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="10:01" /></label>
+        <label>Pre weight<input id="preWeight" type="number" step="0.1" /></label>
+        <label>Post time (24h)<input id="postWeightTime" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="14:30" /></label>
+        <label>Post weight<input id="postWeight" type="number" step="0.1" /></label>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Dialysis</summary>
+      <div class="grid two">
+        <label>Dialysis access
+          <select id="accessType">
+            <option value="">Select...</option>
+            <option>Fistula</option>
+            <option>Graft</option>
+            <option>Catheter</option>
+            <option>Peritoneal Dialysis Catheter</option>
+          </select>
+        </label>
+        <label>Session volume<input id="sessionVolume" type="number" step="0.1" /></label>
+        <label>Single pool Kt/V<input id="singlePoolKtV" type="number" step="0.1" /></label>
+        <label>Dialysis start (24h)<input id="dialysisStart" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="09:15" /></label>
+        <label>Dialysis end (24h)<input id="dialysisEnd" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="12:41" /></label>
+      </div>
+    </details>
+
+    <details open>
+      <summary>Drug Administration</summary>
+      <div class="grid two">
+        <label>Kit 1<input id="kit1" type="text" /></label>
+        <label>Kit 2<input id="kit2" type="text" /></label>
+        <label>Admin start (24h)<input id="adminStart" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="11:19" /></label>
+        <label>Admin end (24h)<input id="adminEnd" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="11:19" /></label>
+      </div>
+    </details>
+
+    <details>
+      <summary>Samples</summary>
+      <div class="grid two">
+        <label>Lab sample time (24h)<input id="labTime" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="10:06" /></label>
+        <label>PK sample time (24h)<input id="pkTime" class="time24" type="text" inputmode="numeric" maxlength="5" placeholder="10:06" /></label>
+      </div>
+    </details>
+
+    <div class="button-row">
+      <button id="clearButton" class="secondary" type="button">Clear Form</button>
+      <button id="fillButton" type="button">Fill Current Page (F2)</button>
+    </div>
+    <div id="status" role="status"></div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

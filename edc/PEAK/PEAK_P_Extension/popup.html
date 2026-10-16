@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PEAK P</title>
+<style>
+  body { width: 390px; margin: 0; padding: 14px; font-family: Arial, sans-serif; background:#eef9ff; color:#14232c; }
+  h1 { font-size:18px; margin:0 0 8px; }
+  p { font-size:12px; margin:0 0 10px; line-height:1.4; }
+  textarea { box-sizing:border-box; width:100%; height:260px; resize:vertical; border:1px solid #8fc9e8; border-radius:7px; padding:9px; font:12px Consolas, monospace; background:white; }
+  button { margin-top:10px; width:100%; padding:9px; border:0; border-radius:7px; background:#8dd7ff; color:#10202b; font-weight:700; cursor:pointer; }
+  #status { min-height:16px; margin-top:8px; font-size:12px; font-weight:600; }
+</style>
+</head>
+<body>
+  <h1>PEAK P</h1>
+  <p>Paste the data object below, click Save, then press <b>F2</b> on the PEAK form.</p>
+  <textarea id="data" spellcheck="false" placeholder='{"CentralLabCollectionTime":"28-SEP-2026 12:32", ...}'></textarea>
+  <button id="save">Save data</button>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

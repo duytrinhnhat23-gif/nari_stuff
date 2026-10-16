@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clinical Data Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>Clinical Data Extractor</h1>
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-page="visit">Visit</button>
+      <button class="tab" data-page="conmed">ConMed</button>
+      <button class="tab" data-page="history">Medical History</button>
+    </div>
+
+    <section class="page active" id="visit">
+      <p>Extract the visit/form fields from the current page.</p>
+      <button class="run" data-action="visit">Extract Visit Data</button>
+    </section>
+    <section class="page" id="conmed">
+      <p>Extract concomitant medication rows from the current page.</p>
+      <button class="run" data-action="conmed">Extract ConMed</button>
+    </section>
+    <section class="page" id="history">
+      <p>Extract medical-history rows from the open multi-record modal.</p>
+      <button class="run" data-action="history">Extract Medical History</button>
+    </section>
+
+    <div class="status" id="status">Ready.</div>
+    <textarea id="output" spellcheck="false" placeholder="Extracted data will appear here."></textarea>
+    <div class="actions">
+      <button id="copyBtn" disabled>Copy Output</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+async function r1ActiveTab(){const tabs=await chrome.tabs.query({active:true,currentWindow:true});if(!tabs[0]?.id)throw new Error("No active tab found.");return tabs[0].id;} async function r1Send(mode,data){const id=await r1ActiveTab();return chrome.tabs.sendMessage(id,{type:"R1_RUN",mode,data});}
