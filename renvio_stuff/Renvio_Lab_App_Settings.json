@@ -1,18 +1,19 @@
 {
-  "patients": "ALAS, FELICITY\nANGEL CANO, SANTIAGO\nARREOLA, OSCAR\nAYALA MUNOZ, ALICIA\nBARAJAS, FLAVIO\nBARELA, MARY\nBERNAL, BRENDA\nBUGARIN, JOSE\nCAIRNEY, WILLIAM\nCARMONA, MARTIN\nCARRAZCO, EDMUNDO\nCHAVARIN, FRANCISCO\nCLARK, SIR",
+  "patients": "ALAS, FELICITY\nANGEL CANO, SANTIAGO\nARREOLA, OSCAR",
   "capture_medications": true,
   "show_dates": false,
+  "include_unqualified": true,
   "output_dir": "C:\\Users\\duytr\\Desktop\\nari_work\\renvio_stuff",
   "labs": {
     "KT/V SINGLE POOL": {
       "enabled": true,
       "direction": "gt",
       "equal": true,
-      "threshold": "1.2"
+      "threshold": "1.6"
     },
     "UREA REDUCTION RATIO": {
       "enabled": true,
-      "direction": "gt",
+      "direction": "lt",
       "equal": true,
       "threshold": "65"
     },

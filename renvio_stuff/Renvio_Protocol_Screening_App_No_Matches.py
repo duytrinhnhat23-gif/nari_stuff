@@ -8,6 +8,8 @@ import traceback
 import threading
 import queue
 import operator
+import statistics
+import json
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -19,7 +21,7 @@ from tkinter import ttk, filedialog, messagebox
 PATIENTS = [
     ("ALAS", "FELICITY"),
     ("ANGEL CANO", "SANTIAGO"),
-    # ("ARREOLA", "OSCAR"),
+    ("ARREOLA", "OSCAR"),
     # ("AYALA MUNOZ", "ALICIA"),
     # ("BARAJAS", "FLAVIO"),
     # ("BARELA", "MARY"),
@@ -48,6 +50,20 @@ OUTPUT_FILE = OUTPUT_DIR / (
     + ".csv"
 )
 SHOW_LAB_DATES = False
+SETTINGS_FILE = OUTPUT_DIR / "Renvio_Lab_App_Settings.json"
+
+# Protocol-based passing thresholds (values assumed in units displayed by Renvio).
+# HbA1c is conditional and therefore is captured but not filtered by default.
+DEFAULT_LAB_FILTERS = {
+    "KT/V SINGLE POOL": ("gt", True, "1.2"),
+    "UREA REDUCTION RATIO": ("gt", True, "65"),
+    "HEMOGLOBIN A1C": ("none", False, ""),
+    "HEMOGLOBIN": ("gt", True, "8"),
+    "PLATELET": ("gt", True, "100"),
+    "WBC": ("gt", True, "2"),
+}
+# WBC also has an upper bound of 11.0 (inclusive).
+WBC_UPPER_BOUND = 11.0
 # The first search is performed through the existing Renvio
 # search page. We do not navigate directly to PatientLabs
 # until Search has been completed.
@@ -360,7 +376,7 @@ MED_EXTRACTION_JS = r"""
 """
 
 
-def extract_medications(page):
+def open_patient_medications(page):
     page.goto(MEDS_URL, wait_until="domcontentloaded", timeout=30000)
     page.wait_for_function(
         """() => [...document.querySelectorAll('table')].some(t => {
@@ -372,8 +388,16 @@ def extract_medications(page):
         })""",
         timeout=20000
     )
+    # Preserve the delay used in the working standalone script.
+    page.wait_for_timeout(500)
+
+
+def extract_medications(page):
     medications = page.evaluate(MED_EXTRACTION_JS)
-    print(f"  Current medications ({len(medications)}): " + ", ".join(medications), flush=True)
+    if not isinstance(medications, list):
+        raise RuntimeError("Invalid medication extraction result")
+    print(f"  Current medications ({len(medications)}): " +
+          ", ".join(medications), flush=True)
     return medications
 
 
@@ -577,7 +601,7 @@ def evaluate_condition(value, direction, inclusive, threshold):
 class RenvioApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Renvio Lab & Medication Downloader")
+        self.title("Renvio Protocol Lab Screening & Medication Downloader")
         self.geometry("1080x820")
         self.minsize(790, 590)
         self.messages = queue.Queue()
@@ -586,15 +610,19 @@ class RenvioApp(tk.Tk):
         self.lab_controls = {}
         self.med_enabled = tk.BooleanVar(value=True)
         self.show_dates = tk.BooleanVar(value=False)
-        self.output_dir = tk.StringVar(value=str(Path(__file__).resolve().parent))
+        self.output_dir = tk.StringVar(
+            value=str(Path(__file__).resolve().parent))
         self._build()
+        self._load_settings()
         self.after(100, self._poll)
 
     def _build(self):
         outer = ttk.Frame(self, padding=12)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="Renvio Patient Lab & Medication Report", font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        ttk.Label(outer, text="Patients: LAST NAME, FIRST NAME — one per line. Drag the divider to resize the list.").pack(anchor="w", pady=(5, 4))
+        ttk.Label(outer, text="Renvio Patient Lab & Medication Report",
+                  font=("Segoe UI", 16, "bold")).pack(anchor="w")
+        ttk.Label(outer, text="Patients: LAST NAME, FIRST NAME — one per line. Drag the divider to resize the list.").pack(
+            anchor="w", pady=(5, 4))
 
         pane = ttk.Panedwindow(outer, orient="vertical")
         pane.pack(fill="both", expand=True)
@@ -605,53 +633,126 @@ class RenvioApp(tk.Tk):
 
         patients_frame = ttk.Frame(upper)
         patients_frame.pack(fill="both", expand=True)
-        self.patient_text = tk.Text(patients_frame, height=8, wrap="none", undo=True, font=("Consolas", 10))
+        self.patient_text = tk.Text(
+            patients_frame, height=8, wrap="none", undo=True, font=("Consolas", 10))
         self.patient_text.pack(side="left", fill="both", expand=True)
-        scrollbar = ttk.Scrollbar(patients_frame, orient="vertical", command=self.patient_text.yview)
+        scrollbar = ttk.Scrollbar(
+            patients_frame, orient="vertical", command=self.patient_text.yview)
         scrollbar.pack(side="right", fill="y")
         self.patient_text.configure(yscrollcommand=scrollbar.set)
-        self.patient_text.insert("1.0", "\n".join(f"{last}, {first}" for last, first in PATIENTS))
+        self.patient_text.insert("1.0", "\n".join(
+            f"{last}, {first}" for last, first in PATIENTS))
 
-        ttk.Label(lower, text="Lab selection and comparison filters", font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(6, 6))
-        ttk.Label(lower, text="Select < or > and optionally = for ≤ or ≥. Select = alone for exact match. No operator = capture all values.").pack(anchor="w")
+        ttk.Label(lower, text="Lab selection and comparison filters",
+                  font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(6, 6))
+        ttk.Label(lower, text="Defaults are passing criteria. All enabled conditions must pass. Kt/V checks every 3-month reading AND median.").pack(anchor="w")
         table = ttk.Frame(lower)
         table.pack(fill="x", pady=(8, 4))
         for c, title in enumerate(("Get", "Lab", "<", ">", "=", "Threshold")):
-            ttk.Label(table, text=title, font=("Segoe UI", 9, "bold")).grid(row=0, column=c, sticky="w", padx=10)
+            ttk.Label(table, text=title, font=("Segoe UI", 9, "bold")
+                      ).grid(row=0, column=c, sticky="w", padx=10)
         for i, (key, label) in enumerate(LAB_COLUMNS, 1):
             enabled = tk.BooleanVar(value=True)
             direction = tk.StringVar(value="none")
             equal = tk.BooleanVar(value=False)
-            threshold = tk.StringVar()
-            ttk.Checkbutton(table, variable=enabled).grid(row=i, column=0, padx=10, pady=3)
-            ttk.Label(table, text=label, width=22).grid(row=i, column=1, sticky="w", padx=10)
-            ttk.Radiobutton(table, variable=direction, value="lt").grid(row=i, column=2, padx=10)
-            ttk.Radiobutton(table, variable=direction, value="gt").grid(row=i, column=3, padx=10)
-            ttk.Checkbutton(table, variable=equal).grid(row=i, column=4, padx=10)
-            ttk.Entry(table, textvariable=threshold, width=14).grid(row=i, column=5, padx=10)
+            default_op, default_equal, default_threshold = DEFAULT_LAB_FILTERS.get(
+                key, ("none", False, "")
+            )
+            direction.set(default_op)
+            equal.set(default_equal)
+            threshold = tk.StringVar(value=default_threshold)
+            ttk.Checkbutton(table, variable=enabled).grid(
+                row=i, column=0, padx=10, pady=3)
+            ttk.Label(table, text=label, width=22).grid(
+                row=i, column=1, sticky="w", padx=10)
+            ttk.Radiobutton(table, variable=direction, value="lt").grid(
+                row=i, column=2, padx=10)
+            ttk.Radiobutton(table, variable=direction, value="gt").grid(
+                row=i, column=3, padx=10)
+            ttk.Checkbutton(table, variable=equal).grid(
+                row=i, column=4, padx=10)
+            ttk.Entry(table, textvariable=threshold, width=14).grid(
+                row=i, column=5, padx=10)
             # Equal checked without a direction is an exact-match filter.
-            self.lab_controls[key] = (label, enabled, direction, equal, threshold)
-        ttk.Button(table, text="Clear comparisons", command=self._clear_filters).grid(row=len(LAB_COLUMNS)+1, column=1, pady=6, sticky="w")
-        ttk.Checkbutton(lower, text="Capture Current Medications", variable=self.med_enabled).pack(anchor="w", pady=(5, 0))
-        ttk.Checkbutton(lower, text="Include lab date columns", variable=self.show_dates).pack(anchor="w")
+            self.lab_controls[key] = (
+                label, enabled, direction, equal, threshold)
+        ttk.Label(lower, text="Default WBC range: 2.0–11.0 (x10³/µL), inclusive. HbA1c is conditional: capture only by default.").pack(anchor="w")
+        ttk.Label(lower, text="hs-CRP, ANC, ALT, AST and bilirubin are not extracted by the current lab JavaScript. Review separately.").pack(anchor="w")
+        ttk.Button(table, text="Clear comparisons", command=self._clear_filters).grid(
+            row=len(LAB_COLUMNS)+1, column=1, pady=6, sticky="w")
+        ttk.Checkbutton(lower, text="Capture Current Medications",
+                        variable=self.med_enabled).pack(anchor="w", pady=(5, 0))
+        ttk.Checkbutton(lower, text="Include lab date columns",
+                        variable=self.show_dates).pack(anchor="w")
 
         dest = ttk.Frame(lower)
         dest.pack(fill="x", pady=7)
         ttk.Label(dest, text="Save folder:").pack(side="left")
-        ttk.Entry(dest, textvariable=self.output_dir).pack(side="left", fill="x", expand=True, padx=7)
+        ttk.Entry(dest, textvariable=self.output_dir).pack(
+            side="left", fill="x", expand=True, padx=7)
         ttk.Button(dest, text="Browse", command=self._browse).pack(side="left")
         actions = ttk.Frame(lower)
         actions.pack(fill="x")
-        self.start_button = ttk.Button(actions, text="Start", command=self._start)
+        self.start_button = ttk.Button(
+            actions, text="Start", command=self._start)
         self.start_button.pack(side="left")
-        self.stop_button = ttk.Button(actions, text="Stop after current patient", command=self.stop_event.set, state="disabled")
+        self.stop_button = ttk.Button(
+            actions, text="Stop after current patient", command=self.stop_event.set, state="disabled")
         self.stop_button.pack(side="left", padx=8)
         self.status = tk.StringVar(value="Ready")
         ttk.Label(actions, textvariable=self.status).pack(side="left", padx=12)
         logframe = ttk.LabelFrame(lower, text="Progress")
         logframe.pack(fill="both", expand=True, pady=(8, 0))
-        self.log = tk.Text(logframe, height=8, state="disabled", font=("Consolas", 9))
+        self.log = tk.Text(logframe, height=8,
+                           state="disabled", font=("Consolas", 9))
         self.log.pack(fill="both", expand=True)
+
+    def _save_settings(self):
+        config = {
+            "patients": self.patient_text.get("1.0", "end-1c"),
+            "capture_medications": self.med_enabled.get(),
+            "show_dates": self.show_dates.get(),
+            "output_dir": self.output_dir.get(),
+            "labs": {
+                key: {
+                    "enabled": enabled.get(),
+                    "direction": direction.get(),
+                    "equal": equal.get(),
+                    "threshold": threshold.get(),
+                }
+                for key, (_, enabled, direction, equal, threshold)
+                in self.lab_controls.items()
+            },
+        }
+        SETTINGS_FILE.write_text(
+            json.dumps(config, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+    def _load_settings(self):
+        if not SETTINGS_FILE.exists():
+            return
+        try:
+            config = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            self.patient_text.delete("1.0", "end")
+            self.patient_text.insert(
+                "1.0",
+                "\n".join(f"{last}, {first}" for last, first in PATIENTS)
+            )
+            self.med_enabled.set(config.get("capture_medications", True))
+            self.show_dates.set(config.get("show_dates", False))
+            self.output_dir.set(config.get("output_dir", str(OUTPUT_DIR)))
+            for key, state in config.get("labs", {}).items():
+                if key not in self.lab_controls:
+                    continue
+                _, enabled, direction, equal, threshold = self.lab_controls[key]
+                enabled.set(state.get("enabled", True))
+                direction.set(state.get("direction", "none"))
+                equal.set(state.get("equal", False))
+                threshold.set(state.get("threshold", ""))
+        except Exception as exc:
+            messagebox.showwarning(
+                "Settings", f"Could not load saved settings: {exc}")
 
     def _clear_filters(self):
         for _, _, direction, equal, threshold in self.lab_controls.values():
@@ -672,7 +773,8 @@ class RenvioApp(tk.Tk):
                 continue
             parts = raw.split(",", 1)
             if len(parts) != 2 or not all(part.strip() for part in parts):
-                raise ValueError(f"Patient line {line_no}: expected LAST NAME, FIRST NAME")
+                raise ValueError(
+                    f"Patient line {line_no}: expected LAST NAME, FIRST NAME")
             result.append(tuple(part.strip() for part in parts))
         if not result:
             raise ValueError("Enter at least one patient")
@@ -710,13 +812,16 @@ class RenvioApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Invalid configuration", str(exc))
             return
-        output = folder / ("Patient_Lab_Medication_Report_" + datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv")
+        self._save_settings()
+        output = folder / ("Patient_Lab_Medication_Report_" +
+                           datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv")
         self.stop_event.clear()
         self.running = True
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.status.set("Running...")
-        thread = threading.Thread(target=self._worker, args=(patients, settings, self.med_enabled.get(), self.show_dates.get(), output), daemon=True)
+        thread = threading.Thread(target=self._worker, args=(
+            patients, settings, self.med_enabled.get(), self.show_dates.get(), output), daemon=True)
         thread.start()
 
     def _emit(self, msg):
@@ -741,60 +846,102 @@ class RenvioApp(tk.Tk):
         self.after(100, self._poll)
 
     def _worker(self, patients, settings, capture_meds, show_dates, output):
-        columns = ["Last Name", "First Name", "Status", "Error"]
+        columns = ["Last Name", "First Name"]
         for key, (label, op, eq, number) in settings.items():
             columns.append(label)
             if show_dates:
                 columns.append(label + " Date")
-            if op != "none":
-                columns.append(label + " Matches")
         if "KT/V SINGLE POOL" in settings:
-            columns.extend(["Kt/V 3-Month Mean", "Kt/V 3-Month Count"])
+            columns.extend(["Kt/V 3-Month Mean",
+                           "Kt/V 3-Month Values"])
         if show_dates:
             columns.extend(["From Date", "To Date"])
         if capture_meds:
             columns.append("Current Medications")
         rows = []
+        skipped = 0
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.connect_over_cdp(CHROME_CDP, timeout=15000)
+                browser = playwright.chromium.connect_over_cdp(
+                    CHROME_CDP, timeout=15000)
                 if not browser.contexts:
                     raise RuntimeError("No Chrome browser context found")
                 page = find_renvio_tab(browser.contexts[0])
                 if page is None:
-                    raise RuntimeError("Open and sign in to Renvio in Chrome first")
+                    raise RuntimeError(
+                        "Open and sign in to Renvio in Chrome first")
                 page.bring_to_front()
                 for index, (last, first) in enumerate(patients, 1):
                     if self.stop_event.is_set():
                         self._emit("Stopped by user")
                         break
                     self._emit(f"[{index}/{len(patients)}] {last}, {first}")
-                    row = {"Last Name": last, "First Name": first, "Status": "OK", "Error": ""}
+                    row = {"Last Name": last, "First Name": first,
+                           "Status": "OK", "Error": ""}
                     errors = []
+                    matched = True
+                    search_verified = False
                     try:
                         search_patient(page, last, first)
-                        if settings:
-                            open_patient_labs(page)
-                            labs = extract_labs(page, last, first)  # verifies patient identity
-                            for key, (label, op, eq, number) in settings.items():
-                                record = labs.get("latest", {}).get(key)
-                                value = record.get("Value") if record else None
-                                row[label] = value if value is not None else ""
-                                if show_dates:
-                                    row[label + " Date"] = record.get("Date", "") if record else ""
-                                if op != "none":
-                                    row[label + " Matches"] = "YES" if evaluate_condition(value, op, eq, number) else "NO"
-                            if "KT/V SINGLE POOL" in settings:
-                                row["Kt/V 3-Month Mean"] = labs.get("ktvMean") if labs.get("ktvMean") is not None else ""
-                                row["Kt/V 3-Month Count"] = len(labs.get("ktvHistory", []))
+                        open_patient_labs(page)
+                        labs = extract_labs(page, last, first)
+                        search_verified = True
+                        for key, (label, op, eq, number) in settings.items():
+                            record = labs.get("latest", {}).get(key)
+                            value = record.get("Value") if record else None
+                            row[label] = value if value is not None else ""
                             if show_dates:
-                                row["From Date"] = labs.get("fromDate", "")
-                                row["To Date"] = labs.get("toDate", "")
+                                row[label +
+                                    " Date"] = record.get("Date", "") if record else ""
+                            if key == "KT/V SINGLE POOL":
+                                # Apply the Kt/V threshold to EVERY reading in the
+                                # existing three-month window AND its median.
+                                history = labs.get("ktvHistory", [])
+                                values = [float(item["Value"]) for item in history
+                                          if item.get("Value") is not None]
+                                median = statistics.median(
+                                    values) if values else None
+                                row["Kt/V 3-Month Mean"] = (
+                                    labs.get("ktvMean") if labs.get(
+                                        "ktvMean") is not None else ""
+                                )
+                                row["Kt/V 3-Month Median"] = median if median is not None else ""
+                                row["Kt/V 3-Month Count"] = len(values)
+                                row["Kt/V 3-Month Values"] = "; ".join(
+                                    f'{item["Date"]}: {item["Value"]}' for item in history
+                                )
+                                if op != "none":
+                                    mean = labs.get("ktvMean")
+
+                                    passes = evaluate_condition(
+                                        mean, op, eq, number)
+
+                                    self._emit(
+                                        f"  Kt/V: mean={mean}; "
+                                        f"mean passes={passes}"
+                                    )
+
+                                    if not passes:
+                                        matched = False
+                            elif op != "none":
+                                passes = evaluate_condition(
+                                    value, op, eq, number)
+                                if key == "WBC" and op == "gt" and eq and number == 2.0:
+                                    # Protocol WBC range: >= 2 and <= 11.
+                                    passes = passes and value is not None and float(
+                                        value) <= WBC_UPPER_BOUND
+                                if not passes:
+                                    matched = False
+                        if show_dates:
+                            row["From Date"] = labs.get("fromDate", "")
+                            row["To Date"] = labs.get("toDate", "")
                     except Exception as exc:
                         errors.append("Labs/search: " + str(exc))
                         self._emit("  Labs/search ERROR: " + str(exc))
-                    # Do not extract medications after failed search or patient verification.
-                    if capture_meds and not errors:
+
+                    # Same sequence as the working script: extract medications
+                    # after verifying the selected patient, before lab filtering.
+                    if capture_meds and search_verified:
                         try:
                             open_patient_medications(page)
                             meds = extract_medications(page)
@@ -803,17 +950,27 @@ class RenvioApp(tk.Tk):
                         except Exception as exc:
                             errors.append("Medications: " + str(exc))
                             self._emit("  Medication ERROR: " + str(exc))
+
+                    # Filters control which patient rows are exported.
+                    # An extraction error is kept as a reviewable ERROR row.
+                    if search_verified and not matched and not errors:
+                        skipped += 1
+                        self._emit(
+                            "  FILTERED OUT: does not meet all lab conditions")
+                        continue
                     if errors:
                         row["Status"] = "ERROR"
                         row["Error"] = " | ".join(errors)
                     rows.append(row)
                     # Save after each patient so interrupted runs retain progress.
                     with output.open("w", newline="", encoding="utf-8-sig") as file:
-                        writer = csv.DictWriter(file, fieldnames=columns, extrasaction="ignore")
+                        writer = csv.DictWriter(
+                            file, fieldnames=columns, extrasaction="ignore")
                         writer.writeheader()
                         writer.writerows(rows)
                     self._emit("  Saved: " + str(output))
-            self.messages.put(("done", f"Finished {len(rows)}/{len(patients)} patients. CSV: {output}"))
+            self.messages.put(
+                ("done", f"Finished. Exported {len(rows)}; filtered out {skipped}. CSV: {output}"))
         except Exception as exc:
             self._emit("FATAL ERROR: " + str(exc))
             self._emit(traceback.format_exc())

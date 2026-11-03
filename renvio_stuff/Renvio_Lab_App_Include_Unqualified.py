@@ -3,6 +3,9 @@ from playwright.sync_api import sync_playwright
 from pathlib import Path
 from datetime import datetime
 import csv
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils import get_column_letter
 import re
 import traceback
 import threading
@@ -610,6 +613,7 @@ class RenvioApp(tk.Tk):
         self.lab_controls = {}
         self.med_enabled = tk.BooleanVar(value=True)
         self.show_dates = tk.BooleanVar(value=False)
+        self.include_unqualified = tk.BooleanVar(value=False)
         self.output_dir = tk.StringVar(
             value=str(Path(__file__).resolve().parent))
         self._build()
@@ -685,6 +689,9 @@ class RenvioApp(tk.Tk):
         ttk.Checkbutton(lower, text="Include lab date columns",
                         variable=self.show_dates).pack(anchor="w")
 
+        ttk.Checkbutton(lower, text="Include patients who do not meet criteria (highlight red in Excel)",
+                        variable=self.include_unqualified).pack(anchor="w", pady=(5, 0))
+
         dest = ttk.Frame(lower)
         dest.pack(fill="x", pady=7)
         ttk.Label(dest, text="Save folder:").pack(side="left")
@@ -712,6 +719,7 @@ class RenvioApp(tk.Tk):
             "patients": self.patient_text.get("1.0", "end-1c"),
             "capture_medications": self.med_enabled.get(),
             "show_dates": self.show_dates.get(),
+            "include_unqualified": self.include_unqualified.get(),
             "output_dir": self.output_dir.get(),
             "labs": {
                 key: {
@@ -738,6 +746,8 @@ class RenvioApp(tk.Tk):
             self.patient_text.insert("1.0", config.get("patients", ""))
             self.med_enabled.set(config.get("capture_medications", True))
             self.show_dates.set(config.get("show_dates", False))
+            self.include_unqualified.set(
+                config.get("include_unqualified", False))
             self.output_dir.set(config.get("output_dir", str(OUTPUT_DIR)))
             for key, state in config.get("labs", {}).items():
                 if key not in self.lab_controls:
@@ -810,15 +820,18 @@ class RenvioApp(tk.Tk):
             messagebox.showerror("Invalid configuration", str(exc))
             return
         self._save_settings()
+        include_unqualified = self.include_unqualified.get()
         output = folder / ("Patient_Lab_Medication_Report_" +
-                           datetime.now().strftime("%Y%m%d_%H%M%S") + ".csv")
+                           datetime.now().strftime("%Y%m%d_%H%M%S") +
+                           (".xlsx" if include_unqualified else ".csv"))
         self.stop_event.clear()
         self.running = True
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.status.set("Running...")
         thread = threading.Thread(target=self._worker, args=(
-            patients, settings, self.med_enabled.get(), self.show_dates.get(), output), daemon=True)
+            patients, settings, self.med_enabled.get(), self.show_dates.get(),
+            include_unqualified, output), daemon=True)
         thread.start()
 
     def _emit(self, msg):
@@ -842,21 +855,44 @@ class RenvioApp(tk.Tk):
             pass
         self.after(100, self._poll)
 
-    def _worker(self, patients, settings, capture_meds, show_dates, output):
-        columns = ["Last Name", "First Name", "Status", "Error"]
+    @staticmethod
+    def _save_excel(output, columns, rows):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Patient Screening"
+        ws.append(columns)
+        header_fill = PatternFill("solid", fgColor="17365D")
+        red_fill = PatternFill("solid", fgColor="FFC7CE")
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = Font(color="FFFFFF", bold=True)
+        for record in rows:
+            ws.append([record.get(column, "") for column in columns])
+            if record.get("Qualification") == "Not Qualified":
+                for cell in ws[ws.max_row]:
+                    cell.fill = red_fill
+        ws.freeze_panes = "C2"
+        ws.auto_filter.ref = ws.dimensions
+        for col_idx, label in enumerate(columns, 1):
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(
+                55, max(14, len(label) + 3))
+        wb.save(output)
+
+    def _worker(self, patients, settings, capture_meds, show_dates, include_unqualified, output):
+        columns = ["Last Name", "First Name"]
         for key, (label, op, eq, number) in settings.items():
             columns.append(label)
             if show_dates:
                 columns.append(label + " Date")
-            if op != "none":
-                columns.append(label + " Matches")
         if "KT/V SINGLE POOL" in settings:
-            columns.extend(["Kt/V 3-Month Mean", "Kt/V 3-Month Median",
-                           "Kt/V 3-Month Count", "Kt/V 3-Month Values"])
+            columns.extend(["Kt/V 3-Month Mean",
+                           "Kt/V 3-Month Values"])
         if show_dates:
             columns.extend(["From Date", "To Date"])
         if capture_meds:
             columns.append("Current Medications")
+        if include_unqualified:
+            columns.append("Qualification")
         rows = []
         skipped = 0
         try:
@@ -893,42 +929,36 @@ class RenvioApp(tk.Tk):
                                 row[label +
                                     " Date"] = record.get("Date", "") if record else ""
                             if key == "KT/V SINGLE POOL":
-                                # Apply the Kt/V threshold to EVERY reading in the
-                                # existing three-month window AND its median.
                                 history = labs.get("ktvHistory", [])
-                                values = [float(item["Value"]) for item in history
-                                          if item.get("Value") is not None]
-                                median = statistics.median(
-                                    values) if values else None
+                                mean = labs.get("ktvMean")
+
                                 row["Kt/V 3-Month Mean"] = (
-                                    labs.get("ktvMean") if labs.get(
-                                        "ktvMean") is not None else ""
+                                    mean if mean is not None else ""
                                 )
-                                row["Kt/V 3-Month Median"] = median if median is not None else ""
-                                row["Kt/V 3-Month Count"] = len(values)
+
                                 row["Kt/V 3-Month Values"] = "; ".join(
-                                    f'{item["Date"]}: {item["Value"]}' for item in history
+                                    f'{item["Date"]}: {item["Value"]}'
+                                    for item in history
                                 )
+
                                 if op != "none":
-                                    passes = bool(values) and all(
-                                        evaluate_condition(v, op, eq, number) for v in values
-                                    ) and evaluate_condition(median, op, eq, number)
-                                    row[label + " Matches"] = "YES" if passes else "NO"
+                                    passes = evaluate_condition(
+                                        mean, op, eq, number)
+
                                     self._emit(
-                                        f"  Kt/V: {len(values)} readings; median={median}; "
-                                        f"all readings + median pass={passes}"
+                                        f"  Kt/V: mean={mean}; pass={passes}"
                                     )
+
                                     if not passes:
                                         matched = False
+
                             elif op != "none":
                                 passes = evaluate_condition(
                                     value, op, eq, number)
-                                row[label + " Matches"] = "YES" if passes else "NO"
                                 if key == "WBC" and op == "gt" and eq and number == 2.0:
                                     # Protocol WBC range: >= 2 and <= 11.
                                     passes = passes and value is not None and float(
                                         value) <= WBC_UPPER_BOUND
-                                    row[label + " Matches"] = "YES" if passes else "NO"
                                 if not passes:
                                     matched = False
                         if show_dates:
@@ -952,7 +982,7 @@ class RenvioApp(tk.Tk):
 
                     # Filters control which patient rows are exported.
                     # An extraction error is kept as a reviewable ERROR row.
-                    if search_verified and not matched and not errors:
+                    if search_verified and not matched and not errors and not include_unqualified:
                         skipped += 1
                         self._emit(
                             "  FILTERED OUT: does not meet all lab conditions")
@@ -960,13 +990,31 @@ class RenvioApp(tk.Tk):
                     if errors:
                         row["Status"] = "ERROR"
                         row["Error"] = " | ".join(errors)
+                    if include_unqualified:
+                        row["Qualification"] = (
+                            "Review - extraction error" if errors else
+                            "Qualified" if matched else "Not Qualified"
+                        )
                     rows.append(row)
                     # Save after each patient so interrupted runs retain progress.
-                    with output.open("w", newline="", encoding="utf-8-sig") as file:
-                        writer = csv.DictWriter(
-                            file, fieldnames=columns, extrasaction="ignore")
-                        writer.writeheader()
-                        writer.writerows(rows)
+                    if include_unqualified:
+                        try:
+                            self._save_excel(output, columns, rows)
+                        except PermissionError:
+                            backup = output.with_name(
+                                output.stem + "_backup_" +
+                                datetime.now().strftime("%H%M%S_%f") +
+                                ".xlsx"
+                            )
+                            self._save_excel(backup, columns, rows)
+                            self._emit(
+                                f"Original Excel file is locked. Saved backup: {backup}")
+                    else:
+                        with output.open("w", newline="", encoding="utf-8-sig") as file:
+                            writer = csv.DictWriter(
+                                file, fieldnames=columns, extrasaction="ignore")
+                            writer.writeheader()
+                            writer.writerows(rows)
                     self._emit("  Saved: " + str(output))
             self.messages.put(
                 ("done", f"Finished. Exported {len(rows)}; filtered out {skipped}. CSV: {output}"))
