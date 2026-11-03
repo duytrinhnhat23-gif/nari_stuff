@@ -2593,76 +2593,154 @@ async function fillPEAKForm(data) {
     // PAGE 2 — VITAL SIGNS / PRE-DIALYSIS WEIGHT
     // ============================================================
 
+
     async function fillVitalSignsPage() {
-
         const FIELD = {
-
-            collected:
-                '[data-testid="field-controls-0-47516247-5579-f111-be2e-005056905e65"]',
-
-            date:
-                '[data-testid="field-controls-0-46516247-5579-f111-be2e-005056905e65"]',
-
-            time:
-                '[data-testid="field-controls-0-48516247-5579-f111-be2e-005056905e65"]',
-
-            weight:
-                '[data-testid="field-controls-0-49516247-5579-f111-be2e-005056905e65"]',
-
-            unit:
-                '[data-testid="field-controls-0-4a516247-5579-f111-be2e-005056905e65"]'
+            collected: '[data-testid="field-controls-0-807e96d0-3ac6-f111-be35-005056905e65"]',
+            date: '[data-testid="field-controls-0-7f7e96d0-3ac6-f111-be35-005056905e65"]',
+            time: '[data-testid="field-controls-0-817e96d0-3ac6-f111-be35-005056905e65"]',
+            weight: '[data-testid="field-controls-0-827e96d0-3ac6-f111-be35-005056905e65"]',
+            unit: '[data-testid="field-controls-0-837e96d0-3ac6-f111-be35-005056905e65"]'
         };
 
+        const pause = ms =>
+            new Promise(resolve => setTimeout(resolve, ms));
 
-        await selectYes(
-            FIELD.collected,
-            "Were vital signs collected?"
+        const getField = (selector, name) => {
+            const field = document.querySelector(selector);
+            if (!field) throw new Error(`${name} not found`);
+            return field;
+        };
+
+        // React-compatible text entry
+        async function enterText(input, value, name) {
+            if (!input) throw new Error(`${name} input not found`);
+
+            const text = String(value);
+            input.focus();
+
+            const setter = Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,
+                "value"
+            ).set;
+
+            setter.call(input, text);
+            input.dispatchEvent(new Event("input", {
+                bubbles: true
+            }));
+
+            input.dispatchEvent(new Event("change", {
+                bubbles: true
+            }));
+
+            await pause(100);
+            input.blur();
+            await pause(100);
+
+            if (input.value !== text) {
+                throw new Error(`${name} did not retain ${text}`);
+            }
+
+            console.log(`✅ ${name}: ${text}`);
+        }
+
+        // Select an actual React dropdown option
+        async function chooseOption(selector, expected, name) {
+            const field = getField(selector, name);
+            const input = field.querySelector('input[role="combobox"]');
+
+            if (!input) throw new Error(`${name} combobox missing`);
+
+            const selectedText = () =>
+                field.querySelector(".onex-select__single-value")
+                    ?.textContent?.trim() || "";
+
+            if (selectedText().toLowerCase() === expected.toLowerCase()) {
+                console.log(`✅ ${name} already selected`);
+                return;
+            }
+
+            input.focus();
+
+            const control = field.querySelector(".onex-select__control");
+            (control || input).click();
+
+            let option = null;
+
+            for (let attempt = 0; attempt < 15; attempt++) {
+                await pause(100);
+
+                option = [...document.querySelectorAll('[role="option"]')]
+                    .find(el =>
+                        el.textContent.trim().toLowerCase() ===
+                        expected.toLowerCase()
+                    );
+
+                if (option) break;
+            }
+
+            if (!option) {
+                throw new Error(`${name}: option "${expected}" not found`);
+            }
+
+            option.dispatchEvent(new MouseEvent("mousedown", {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            }));
+
+            option.click();
+            await pause(200);
+
+            if (selectedText().toLowerCase() !== expected.toLowerCase()) {
+                throw new Error(
+                    `${name}: selection not confirmed; got "${selectedText()}"`
+                );
+            }
+
+            console.log(`✅ ${name}: ${expected}`);
+        }
+
+        // Validate source data
+        if (!data.PreDialysisWeightDateTime) {
+            throw new Error("PreDialysisWeightDateTime is empty");
+        }
+
+        if (data.PreDialysisWeight == null ||
+            data.PreDialysisWeight === "") {
+            throw new Error("PreDialysisWeight is empty");
+        }
+
+        console.log("➡️ Filling Vital Signs - Weight (VS1)");
+
+        // 1. Were vital signs collected? = Yes
+        await selectYes(FIELD.collected, "Were vital signs collected?");
+        await pause(150);
+
+        // 2. Date of vital signs measurement
+        await setDate(FIELD.date, data.PreDialysisWeightDateTime);
+        await pause(150);
+
+        // 3. Vital Signs Time
+        await setTime(FIELD.time, data.PreDialysisWeightDateTime);
+        await pause(150);
+
+        // 4. Weight
+        const weightInput = getField(FIELD.weight, "Weight")
+            .querySelector('input[placeholder="Enter data"]');
+
+        await enterText(
+            weightInput,
+            data.PreDialysisWeight,
+            "Weight"
         );
 
+        // 5. Weight Unit = kg
+        await chooseOption(FIELD.unit, "kg", "Weight Unit");
 
-        await setDate(
-            FIELD.date,
-            data.PreDialysisWeightDateTime
-        );
-
-
-        await setTime(
-            FIELD.time,
-            data.PreDialysisWeightDateTime
-        );
-
-
-        const weightField =
-            document.querySelector(FIELD.weight);
-
-        if (!weightField)
-            throw new Error("Weight field not found");
-
-
-        setInput(
-            weightField.querySelector(
-                'input[placeholder="Enter data"]'
-            ),
-            data.PreDialysisWeight
-        );
-
-
-        console.log(
-            `✅ Weight = ${data.PreDialysisWeight}`
-        );
-
-
-        await selectFirstOption(
-            FIELD.unit,
-            "kg",
-            "Weight Unit"
-        );
-
-
-        console.log(
-            "✅ PRE-DIALYSIS VITAL SIGNS PAGE COMPLETE"
-        );
+        console.log("✅ VITAL SIGNS - WEIGHT COMPLETE");
     }
+
 
 
     // ============================================================
@@ -2798,7 +2876,7 @@ async function fillPEAKForm(data) {
 
         else if (
             document.querySelector(
-                '[data-testid="field-controls-0-47516247-5579-f111-be2e-005056905e65"]'
+                '[data-testid="field-controls-0-827e96d0-3ac6-f111-be35-005056905e65"]'
             )
         ) {
 

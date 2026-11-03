@@ -164,8 +164,12 @@ function extractOnPage(kind) {
       diastolicBP: findField(q, ['Diastolic blood pressure (mmHg)']),
       heightInches: findField(q, ['Height (inches)']),
 
-      changes_to_dialysis_regimen:
-        findField(q, "Were there any changes to the hemodialysis treatment since the last visit?"),
+      changes_to_dialysis_frequency:
+        findField(q, "Was there any changes to the hemodialysis frequency?"),
+      active_vitamin_D_sterol:
+        findField(q, "Was the participant administered an active vitamin D sterol as part of the participant's hemodialysis regimen?"),
+      active_vitamin_D_sterol_status:
+        findField(q, "Since the previous visit, was the active vitamin D sterol started, modified or discontinued?"),
 
       missed_hemodialysis_sessions:
         toBoolean(findField(q, "Missed Hemodialysis Sessions")),

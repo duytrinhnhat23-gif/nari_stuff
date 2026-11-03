@@ -2553,7 +2553,22 @@ async function r1RunAutofill(data) {
         )?.textContent?.trim();
     }
 
+    // =====================================================
+    // VISIT DATE PAGE
+    // =====================================================
 
+    async function runVisitDate() {
+        clickRadio("Was the visit performed?", "Yes")
+        const visitDate =
+            parsePartialDate(
+                data.visitDate,
+                "visitDate"
+            );
+        await fillDate(
+            "Visit Date",
+            visitDate
+        );
+    }
     // =====================================================
     // VITAL SIGNS
     // =====================================================
@@ -3078,6 +3093,7 @@ async function r1RunAutofill(data) {
                 data.visitDate,
                 "visitDate"
             );
+
         await clickRadio(
             "Were hemodialysis parameters collected?",
             "Yes"
@@ -3290,6 +3306,7 @@ async function r1RunAutofill(data) {
         );
 
     }
+
 
 
     // =====================================================
@@ -3597,6 +3614,7 @@ async function r1RunAutofill(data) {
     // =====================================================
 
 
+
     async function runChangesToDialysisRegimen() {
 
         console.log("Detected Changes to Dialysis Regimen");
@@ -3605,19 +3623,13 @@ async function r1RunAutofill(data) {
         // 1. CHANGES TO HEMODIALYSIS TREATMENT
         // ============================================
 
-        // Answer directly from changes_to_dialysis_regimen
-        if (data.changes_to_dialysis_regimen != null) {
-
-            const answer =
-                data.changes_to_dialysis_regimen === true ||
-                    normalize(data.changes_to_dialysis_regimen) === "yes" ||
-                    normalize(data.changes_to_dialysis_regimen) === "true"
-                    ? "Yes"
-                    : "No";
+        if (data.changes_to_dialysis_frequency != null) {
 
             await clickRadioVerified(
                 "Were there any changes to the hemodialysis treatment since the last visit?",
-                answer
+                normalize(data.changes_to_dialysis_frequency) === "yes"
+                    ? "Yes"
+                    : "No"
             );
         }
 
@@ -3625,46 +3637,111 @@ async function r1RunAutofill(data) {
         // 2. UNSCHEDULED DIALYSIS EVENTS
         // ============================================
 
-        // Yes if ANY of the three variables is not null.
-        // No if ALL three variables are null.
-
-        const hasUnscheduledEvents = [
+        const eventValues = [
             data.extra_hemodialysis_sessions,
             data.missed_hemodialysis_sessions,
             data.partial_hemodialysis_sessions
-        ].some(value => value !== null && value !== undefined);
+        ];
 
-        await clickRadioVerified(
-            "Were there any unscheduled dialysis events (missed sessions, extra sessions, or partial dialysis sessions) since the last visit?",
-            hasUnscheduledEvents ? "Yes" : "No"
+        // Null means unknown, not necessarily No.
+        // Fill only when all event statuses are known,
+        // or when at least one event is explicitly Yes.
+
+        const hasEvents = eventValues.some(
+            value => normalize(value) === "yes" || value === true
         );
+
+        const allEventsKnown = eventValues.every(
+            value => value !== null && value !== undefined
+        );
+
+        if (hasEvents || allEventsKnown) {
+
+            await clickRadioVerified(
+                "Were there any unscheduled dialysis events (missed sessions, extra sessions, or partial dialysis sessions) since the last visit?",
+                hasEvents ? "Yes" : "No"
+            );
+        }
 
         // ============================================
         // 3. ACTIVE VITAMIN D STEROL
         // ============================================
 
-        if (data.activeVitaminDSterol != null) {
+        const vitaminDText = String(
+            data.active_vitamin_D_sterol ??
+            data.activeVitaminDSterol ??
+            ""
+        ).trim();
+
+        const vitaminDYes = /^yes\b/i.test(vitaminDText);
+        const vitaminDNo = /^no\b/i.test(vitaminDText);
+
+        if (vitaminDYes || vitaminDNo) {
 
             await clickRadioVerified(
                 "Was the participant administered an active vitamin D sterol (calcitriol, paricalcitol, doxercalciferol, other) as part of the participant's hemodialysis regimen?",
-                data.activeVitaminDSterol
+                vitaminDYes ? "Yes" : "No"
             );
         }
 
         // ============================================
-        // 4. CALCIMIMETIC
+        // 4. CONCOMITANT MEDICATION NUMBER
+        // ============================================
+
+        if (vitaminDYes) {
+
+            const conMedMatch = vitaminDText.match(
+                /con\s*med\s*(?:log\s*)?line\s*:\s*(\d+)/i
+            );
+
+            if (conMedMatch) {
+
+                await sleep(400);
+
+                const conMedRow = await waitForRow(
+                    "If Yes, provide the Concomitant Medication Number"
+                );
+
+                await setReactSearchSelectByText(
+                    conMedRow,
+                    conMedMatch[1]
+                );
+            }
+        }
+
+        // ============================================
+        // 5. VITAMIN D STEROL STATUS
+        // ============================================
+
+        if (data.active_vitamin_D_sterol_status != null) {
+
+            await clickRadioVerified(
+                "Since the previous visit, was the active vitamin D sterol started, modified or discontinued?",
+                normalize(data.active_vitamin_D_sterol_status) === "yes"
+                    ? "Yes"
+                    : "No"
+            );
+        }
+
+        // ============================================
+        // 6. CALCIMIMETIC
         // ============================================
 
         if (data.calcimimetic != null) {
 
             await clickRadioVerified(
                 "Was the participant administered a calcimimetic (cinacalcet, etelcalcetide, other) as part of the participant's hemodialysis regimen?",
-                data.calcimimetic
+                normalize(data.calcimimetic) === "yes"
+                    ? "Yes"
+                    : "No"
             );
         }
 
-        console.log("Changes to Dialysis Regimen autofill complete.");
+        console.log(
+            "Changes to Dialysis Regimen autofill complete."
+        );
     }
+
 
     // =====================================================
     // AUTO DETECT
@@ -3832,6 +3909,16 @@ async function r1RunAutofill(data) {
         )
     ) {
         await runChangesToDialysisRegimen();
+        return;
+    }
+
+    if (
+        formName.includes("date of visit") ||
+        getRow(
+            "Was the visit performed?"
+        )
+    ) {
+        await runVisitDate();
         return;
     }
 

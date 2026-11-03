@@ -1,0 +1,44 @@
+{
+  "patients": "ALAS, FELICITY\nANGEL CANO, SANTIAGO\nARREOLA, OSCAR\nAYALA MUNOZ, ALICIA\nBARAJAS, FLAVIO\nBARELA, MARY\nBERNAL, BRENDA\nBUGARIN, JOSE\nCAIRNEY, WILLIAM\nCARMONA, MARTIN\nCARRAZCO, EDMUNDO\nCHAVARIN, FRANCISCO\nCLARK, SIR",
+  "capture_medications": true,
+  "show_dates": false,
+  "output_dir": "C:\\Users\\duytr\\Desktop\\nari_work\\renvio_stuff",
+  "labs": {
+    "KT/V SINGLE POOL": {
+      "enabled": true,
+      "direction": "gt",
+      "equal": true,
+      "threshold": "1.2"
+    },
+    "UREA REDUCTION RATIO": {
+      "enabled": true,
+      "direction": "gt",
+      "equal": true,
+      "threshold": "65"
+    },
+    "HEMOGLOBIN A1C": {
+      "enabled": true,
+      "direction": "none",
+      "equal": false,
+      "threshold": ""
+    },
+    "HEMOGLOBIN": {
+      "enabled": true,
+      "direction": "gt",
+      "equal": true,
+      "threshold": "8"
+    },
+    "PLATELET": {
+      "enabled": true,
+      "direction": "gt",
+      "equal": true,
+      "threshold": "100"
+    },
+    "WBC": {
+      "enabled": true,
+      "direction": "gt",
+      "equal": true,
+      "threshold": "2"
+    }
+  }
+}
